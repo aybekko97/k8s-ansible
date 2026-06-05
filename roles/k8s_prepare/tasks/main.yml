@@ -1,0 +1,59 @@
+---
+- name: Disable swap memory space immediately
+  ansible.builtin.command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+  changed_when: true
+
+- name: Disable swap mapping permanently inside /etc/fstab
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+.*)$'
+    replace: '# \1'
+
+- name: Load infrastructure kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ kernel_modules }}"
+
+- name: Ensure kernel modules persist across node reboots
+  ansible.builtin.copy:
+    dest: "{{ modules_config_file }}"
+    content: |
+      {% for module in kernel_modules %}
+      {{ module }}
+      {% endfor %}
+    mode: '0644'
+
+- name: Configure Linux kernel network bridge sysctl parameters
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: "{{ sysctl_config_file }}"
+    state: present
+    reload: true
+  loop: "{{ sysctl_settings }}"
+
+- name: Install underlying containerd application engine
+  ansible.builtin.apt:
+    name: containerd
+    state: present
+    update_cache: true
+
+- name: Verify containerd operating configuration directory exists
+  ansible.builtin.file:
+    path: "{{ containerd_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Generate production default containerd configuration profile
+  ansible.builtin.shell: containerd config default > {{ containerd_config_dir }}/config.toml
+  args:
+    creates: "{{ containerd_config_dir }}/config.toml"
+
+- name: Enforce SystemdCgroup execution layer inside containerd profile
+  ansible.builtin.lineinfile:
+    path: "{{ containerd_config_dir }}/config.toml"
+    regexp: 'SystemdCgroup = false'
+    line: '            SystemdCgroup = true'
+  notify: Restart Containerd

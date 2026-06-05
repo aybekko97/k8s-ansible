@@ -1,0 +1,24 @@
+---
+plugin: amazon.aws.aws_ec2
+regions:
+  - eu-central-1
+
+# Automatically authenticate using the IAM Instance Profile attached to your Ops Box
+auth_kind: instance
+
+# Filter out unrelated EC2 instances in your account
+filters:
+  instance-state-name: [ 'running' ]
+
+# Use internal private IP addresses for master communication inside the VPC
+hostnames:
+  - private-ip-address
+
+# Set global connection variables for the auto-discovered hosts
+compose:
+  ansible_user: "ubuntu"
+
+# Create clean group aliases so your existing site.yml playbooks continue to work
+groups:
+  loadbalancers: "'k8s-lb' in tags.Name"
+  masters: "'k8s-master' in tags.Name"

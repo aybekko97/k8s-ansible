@@ -1,0 +1,14 @@
+---
+# Default configurations for the Kubernetes System Prep role
+containerd_config_dir: "/etc/containerd"
+sysctl_config_file: "/etc/sysctl.d/k8s.conf"
+modules_config_file: "/etc/modules-load.d/k8s.conf"
+
+kernel_modules:
+  - overlay
+  - br_netfilter
+
+sysctl_settings:
+  - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+  - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+  - { key: 'net.ipv4.ip_forward', value: '1' }
