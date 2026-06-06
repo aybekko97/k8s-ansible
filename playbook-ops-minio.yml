@@ -60,8 +60,7 @@
 
     - name: Configure MinIO Client alias link
       ansible.builtin.command: >
-        {{ mc_bin_path }} alias set local_minio http://localhost:9000 
-        {{ minio_root_user }} {{ minio_root_password }}
+        {{ mc_bin_path }} alias set local_minio http://localhost:9000 {{ minio_root_user }} {{ minio_root_password }}
       register: mc_alias_output
       changed_when: "'added successfully' in mc_alias_output.stdout or 'updated successfully' in mc_alias_output.stdout"
 
