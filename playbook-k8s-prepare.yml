@@ -19,19 +19,17 @@
   tags:
     - init
 
-- ---
 - name: Emergency SSH Public Key Injection Pipeline
-  # 🎯 Explicitly list your target IP addresses here
   hosts: masters
   gather_facts: false # ⚡ Speed up execution by bypassing system fact collection
-  become: yes          # Escalate to root to write securely to authorized_keys
+  become: yes
 
   tasks:
-    - name: Inject administrator personal public key into user space
+    - name: Inject keys straight out of group variables
       ansible.builtin.authorized_key:
         user: ubuntu
         state: present
-        # Reads the local key file directly off your ops-box disk cleanly
-        key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDQmrxfM/xlx7TqVbI2ZI/bB28HhLR6Z7lUN871RmY7Y1oyhbgIITfZ00h/9/XNwzX849Xc6JH103s30djFAoevV1WRLTIVvMRtQIW2IGUnogV4fHbZaV/iXpLIlTIQ1uCEcFjTXUjpGekAmjb432cHLZHtyn0EZpuGF4oeJXWht/V96wFHpS45O3l6+e+YAin2iPnteWHDmy4lyf5tEQwI8p69lLai4ZBPW5JCTjgwJprs0yHviVZvDzB90gm8J/cZmowHsTh2cDmPR5o7bpjxgLgSdTRzzN55M8VtMq/sxi21uutUXbjlaL4nkvAIeSbnKaqY6m5RdVE8ynmT2FTb+wDEFBcjoTOyoDkGc664EKjkz1OrS3iYEEjEREfF/diQWJitIt9jjkQP89evTVHcUQo6J1j7cHsfl4BVPbP4H4FJ9H4DYUjMOLjqeT40OOVrI6dp8UznUK9WodAgSzMQzcsb9z2TYC02+XuNb55hs0EIcjSPz61xXJIAYPPLl/k= aibek@MacBook-Pro-Aibek.local"
+        key: "{{ item }}"
+      loop: "{{ authorized_cluster_keys }}"
   tags:
-    - emergency
+    - pubkeys

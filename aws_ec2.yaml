@@ -14,15 +14,11 @@ filters:
 hostnames:
   - private-ip-address
 
-# Set global connection variables for the auto-discovered hosts
-compose:
-  ansible_user: "ubuntu"
-
 keyed_groups:
-  - key: ec2_tags.K8sRole
+  - key: tags.K8sRole
     separator: ""
 
 # Create clean group aliases so your existing site.yml playbooks continue to work
 groups:
-  loadbalancers: "'k8s-lb' in ec2_tags.Name"
-  masters: "'k8s-master' in ec2_tags.Name"
+  loadbalancers: "'k8s-lb' in tags.Name"
+  masters: "'k8s-master' in tags.Name"
