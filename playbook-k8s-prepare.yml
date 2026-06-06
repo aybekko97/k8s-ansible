@@ -1,6 +1,6 @@
 ---
 - name: Execute Enterprise Cluster Provisioning Sequence
-  hosts: cluster
+  hosts: masters
   become: true
   gather_facts: true
 

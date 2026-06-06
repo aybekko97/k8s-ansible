@@ -1,0 +1,77 @@
+---
+- name: Bootstrap MinIO Backend for Terraform State
+  hosts: localhost
+  connection: local
+  become: true
+
+  vars:
+    minio_data_dir: "/opt/minio/data"
+    minio_bucket_name: "terraform-state"
+    mc_bin_path: "/usr/local/bin/mc"
+
+    # NEW: Fetch credentials securely from the environment at execution time
+    minio_root_user: "{{ lookup('ansible.builtin.env', 'MINIO_ROOT_USER') | default('admin', true) }}"
+    minio_root_password: "{{ lookup('ansible.builtin.env', 'MINIO_ROOT_PASSWORD') }}"
+  tasks:
+    - name: Ensure Docker is installed
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: true
+
+    - name: Ensure Docker service is running and enabled
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create persistent data directory for MinIO
+      ansible.builtin.file:
+        path: "{{ minio_data_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Deploy MinIO Server Container
+      community.docker.docker_container:
+        name: minio_backend
+        image: minio/minio:latest
+        state: started
+        restart_policy: always
+        ports:
+          - "9000:9000"
+          - "9001:9001"
+        volumes:
+          - "{{ minio_data_dir }}:/data"
+        env:
+          MINIO_ROOT_USER: "{{ minio_root_user }}"
+          MINIO_ROOT_PASSWORD: "{{ minio_root_password }}"
+        command: server /data --console-address ":9001"
+        
+    - name: Wait for MinIO port 9000 to become available
+      ansible.builtin.wait_for:
+        port: 9000
+        timeout: 30
+
+    - name: Download MinIO Client (mc) binary
+      ansible.builtin.get_url:
+        url: https://dl.min.io/client/mc/release/linux-amd64/mc
+        dest: "{{ mc_bin_path }}"
+        mode: '0755'
+
+    - name: Configure MinIO Client alias link
+      ansible.builtin.command: >
+        {{ mc_bin_path }} alias set local_minio http://localhost:9000 
+        {{ minio_root_user }} {{ minio_root_password }}
+      register: mc_alias_output
+      changed_when: "'added successfully' in mc_alias_output.stdout or 'updated successfully' in mc_alias_output.stdout"
+
+    - name: Check if the Terraform bucket already exists
+      ansible.builtin.command: "{{ mc_bin_path }} ls local_minio/{{ minio_bucket_name }}"
+      register: bucket_check
+      failed_when: false
+      changed_when: false
+
+    - name: Create the Terraform State bucket if missing
+      ansible.builtin.command: "{{ mc_bin_path }} mb local_minio/{{ minio_bucket_name }}"
+      when: bucket_check.rc != 0
+      changed_when: true

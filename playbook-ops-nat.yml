@@ -1,0 +1,25 @@
+---
+- name: Transform Ops Box into a NAT Gateway
+  hosts: localhost # Runs locally ON the Ops Box itself
+  become: true
+  tasks:
+    - name: Enable IPv4 forwarding in the Linux Kernel
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: true
+        state: present
+        reload: true
+
+    - name: Ensure iptables-persistent is installed to save rules over reboots
+      ansible.builtin.apt:
+        name: iptables-persistent
+        state: present
+        update_cache: true
+
+    - name: Configure IP Masquerading (NAT) on the primary internet interface
+      ansible.builtin.shell: |
+        iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE
+        iptables-save > /etc/iptables/rules.v4
+      register: iptables_output
+      changed_when: true
