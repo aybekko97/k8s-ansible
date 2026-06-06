@@ -1,22 +1,94 @@
 ---
-- name: Initialize Kubernetes Control Plane via Kubeadm
+# Pre-check: See if the primary cluster fabric has already been laid down
+- name: Check if Kubernetes is already active on this host
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: kube_config_check
+
+- name: Inject Dynamic DNS Override for Control Plane Endpoint
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: >-
+      {{ ansible_default_ipv4.address if 'primary' in group_names 
+         else hostvars[groups['primary'][0]]['ansible_default_ipv4']['address'] }} k8s-api.internal
+    regexp: '.*k8s-api.internal$'
+    state: present
+  # Only bother managing hosts if we are doing a fresh installation run
+  when: not hostvars[groups['primary'][0]]['kube_config_check']['stat']['exists']
+
+# ==============================================================================
+# PHASE 1: BOOTSTRAP THE PRIMARY MASTER
+# ==============================================================================
+- name: Initialize Primary Control Plane Cluster Node
   ansible.builtin.command: >
     kubeadm init 
     --pod-network-cidr={{ pod_network_cidr }}
+    --control-plane-endpoint="{{ control_plane_endpoint }}"
+    --upload-certs
     --ignore-preflight-errors=NumCPU
   register: kubeadm_init_output
+  when: 
+    - "'primary' in group_names"
+    - not kube_config_check.stat.exists
   changed_when: '"Your Kubernetes control-plane has initialized successfully!" in kubeadm_init_output.stdout'
-  failed_when: kubeadm_init_output.rc != 0 and 'already exists' not in kubeadm_init_output.stderr
 
-- name: Create .kube directory for the cluster administrator account
+- name: Extract control-plane join string via simple shell processing
+  ansible.builtin.shell: |
+    echo "{{ kubeadm_init_output.stdout }}" | grep -A 2 "kubeadm join .* --control-plane" | tr -d '\\\n' | tr -s ' '
+  register: control_plane_join_raw
+  when: 
+    - "'primary' in group_names"
+    - not kube_config_check.stat.exists
+  changed_when: false
+
+- name: Map the clean string to your variable
+  ansible.builtin.set_fact:
+    kubeadm_join_control_plane: "{{ control_plane_join_raw.stdout | trim }}"
+  when: 
+    - "'primary' in group_names"
+    - not kube_config_check.stat.exists
+
+# ==============================================================================
+# PHASE 2: PROPAGATE REGISTRATION DATA
+# ==============================================================================
+- name: Distribute token string safely across in-memory hosts inventory
+  ansible.builtin.set_fact:
+    shared_join_command: "{{ hostvars[groups['primary'][0]]['kubeadm_join_control_plane'] }}"
+  when: 
+    - not hostvars[groups['primary'][0]]['kube_config_check']['stat']['exists']
+    - shared_join_command is not defined 
+    - groups['primary'] is defined
+
+
+- name: 🔍 Inspect the current value of the join command
+  tags: debug
+  ansible.builtin.debug:
+    var: shared_join_command
+
+# ==============================================================================
+# PHASE 3: ATTACH SECONDARY MASTERS
+# ==============================================================================
+- name: Join Secondary Master Nodes into the HA control-plane fabric
+  ansible.builtin.command: "{{ shared_join_command }} --ignore-preflight-errors=NumCPU"
+  register: join_output
+  when: 
+    - "'secondary' in group_names"
+    - not hostvars[groups['primary'][0]]['kube_config_check']['stat']['exists']
+  changed_when: '"This node has joined the cluster" in join_output.stdout'
+
+# ==============================================================================
+# PHASE 4: GLOBAL USER ADMINISTRATIVE CONFIGURATION
+# ==============================================================================
+- name: Prepare local configurations destination catalog for standard user
   ansible.builtin.file:
     path: /home/ubuntu/.kube
     state: directory
     owner: ubuntu
     group: ubuntu
     mode: '0755'
+  when: not hostvars[groups['primary'][0]]['kube_config_check']['stat']['exists']
 
-- name: Copy admin.conf to user's local kube directory
+- name: Extract system management credentials tokens to user space
   ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
     dest: /home/ubuntu/.kube/config
@@ -24,8 +96,12 @@
     owner: ubuntu
     group: ubuntu
     mode: '0600'
+  when: not hostvars[groups['primary'][0]]['kube_config_check']['stat']['exists']
 
 - name: Deploy Calico Pod Network Container Network Interface (CNI)
   ansible.builtin.command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
   become: false
+  run_once: true
+  delegate_to: "{{ groups['primary'][0] }}"
+  when: not hostvars[groups['primary'][0]]['kube_config_check']['stat']['exists']
   changed_when: true

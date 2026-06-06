@@ -18,6 +18,10 @@ hostnames:
 compose:
   ansible_user: "ubuntu"
 
+keyed_groups:
+  - key: ec2_tags.K8sRole
+    separator: ""
+
 # Create clean group aliases so your existing site.yml playbooks continue to work
 groups:
   loadbalancers: "'k8s-lb' in ec2_tags.Name"

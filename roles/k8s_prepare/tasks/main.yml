@@ -58,17 +58,14 @@
     line: '            SystemdCgroup = true'
   notify: Restart Containerd
 
-- name: Add Kubernetes APT repository GPG key
-  ansible.builtin.get_url:
-    url: https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key
-    dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
-    mode: '0644'
-
-- name: Add Kubernetes APT repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /"
+- name: Add Kubernetes APT repository using modern Deb822 format
+  ansible.builtin.deb822_repository:
+    name: kubernetes
     state: present
-    filename: kubernetes
+    types: [deb]
+    uris: "https://pkgs.k8s.io/core:/stable:/v1.30/deb/"
+    suites: [/]
+    signed_by: "https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key"
 
 - name: Install Kubernetes administration tools
   ansible.builtin.apt:
