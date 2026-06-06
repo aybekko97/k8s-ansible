@@ -1,0 +1,32 @@
+---
+- name: Initialize Kubernetes Control Plane via Kubeadm
+  ansible.builtin.command: >
+    kubeadm init 
+    --pod-network-cidr={{ pod_network_cidr }}
+    --ignore-preflight-errors=NumCPU
+  register: kubeadm_init_output
+  changed_when: "'Your Kubernetes control-plane has initialized successfully!'" in kubeadm_init_output.stdout
+  failed_when: kubeadm_init_output.rc != 0 and 'already exists' not in kubeadm_init_output.stderr
+
+- name: Create .kube directory for the cluster administrator account
+  ansible.builtin.file:
+    path: /home/ubuntu/.kube
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: Copy admin.conf to user's local kube directory
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/ubuntu/.kube/config
+    remote_src: yes
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+
+- name: Deploy Calico Pod Network Container Network Interface (CNI)
+  ansible.builtin.command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
+  become: false
+  changed_when: true
+  
